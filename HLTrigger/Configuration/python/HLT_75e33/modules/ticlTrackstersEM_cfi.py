@@ -9,6 +9,7 @@ ticlTrackstersEM = cms.EDProducer("TrackstersProducer",
     layer_clusters_tiles = cms.InputTag("ticlLayerTileProducer"),
     mightGet = cms.optional.untracked.vstring,
     original_mask = cms.InputTag("ticlTrackstersTrkEM"),
+    tfDnnLabel = cms.string('tracksterSelectionTf'),
     patternRecognitionBy = cms.string('CA'),
     pluginPatternRecognitionByCA = cms.PSet(
         algo_verbosity = cms.int32(0),

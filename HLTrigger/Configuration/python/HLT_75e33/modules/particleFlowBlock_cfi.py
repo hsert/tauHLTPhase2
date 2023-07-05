@@ -28,6 +28,8 @@ particleFlowBlock = cms.EDProducer("PFBlockProducer",
             maxDPtOPt = cms.double(1.0),
             muonMaxDPtOPt = cms.double(1),
             muonSrc = cms.InputTag("hltPhase2L3Muons"),
+            #muonSrc = cms.InputTag("muons1stStep"),
+
             source = cms.InputTag("pfTrack"),
             useIterativeTracking = cms.bool(True),
             trackQuality = cms.string("highPurity"),

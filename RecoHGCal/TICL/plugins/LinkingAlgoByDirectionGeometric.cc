@@ -166,6 +166,22 @@ bool LinkingAlgoByDirectionGeometric::timeAndEnergyCompatible(float &total_raw_e
   return energyCompatible && timeCompatible;
 }
 
+
+bool LinkingAlgoByDirectionGeometric::energyCompatible(float &total_raw_energy,
+                                                              const reco::Track &track,
+                                                              const Trackster &trackster) {
+  float threshold = std::min(0.2 * trackster.raw_energy(), 10.0);
+
+  bool energyCompatible = (total_raw_energy + trackster.raw_energy() < track.p() + threshold);
+
+  if (LinkingAlgoBase::algo_verbosity_ > VerbosityLevel::Advanced) {
+    if (!(energyCompatible))
+      LogDebug("LinkingAlgoByDirectionGeometric")
+          << "energy incompatible : track p " << track.p() << " trackster energy " << trackster.raw_energy() << "\n";
+  }
+  return energyCompatible;
+}
+
 void LinkingAlgoByDirectionGeometric::recordTrackster(const unsigned ts,  //trackster index
                                                       const std::vector<Trackster> &tracksters,
                                                       const edm::Handle<std::vector<Trackster>> tsH,
@@ -228,6 +244,7 @@ void LinkingAlgoByDirectionGeometric::linkTracksters(const edm::Handle<std::vect
                                                      const edm::ValueMap<float> &tkTime,
                                                      const edm::ValueMap<float> &tkTimeErr,
                                                      const edm::ValueMap<float> &tkTimeQual,
+                                                     const bool useMTDTiming,
                                                      const std::vector<reco::Muon> &muons,
                                                      const edm::Handle<std::vector<Trackster>> tsH,
                                                      std::vector<TICLCandidate> &resultLinked,
@@ -391,55 +408,108 @@ void LinkingAlgoByDirectionGeometric::linkTracksters(const edm::Handle<std::vect
     float total_raw_energy = 0.;
 
     auto tkRef = reco::TrackRef(tkH, i);
-    auto track_time = tkTime[tkRef];
-    auto track_timeErr = tkTimeErr[tkRef];
-    auto track_timeQual = tkTimeQual[tkRef];
+    if(useMTDTiming){
+      auto track_time = tkTime[tkRef];
+      auto track_timeErr = tkTimeErr[tkRef];
+      auto track_timeQual = tkTimeQual[tkRef];
+    
 
-    for (const unsigned ts3_idx : tsNearTk[i]) {  // tk -> ts
-      if (timeAndEnergyCompatible(
-              total_raw_energy, tracks[i], tracksters[ts3_idx], track_time, track_timeErr, track_timeQual)) {
-        recordTrackster(ts3_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
-      }
-      for (const unsigned ts2_idx : tsNearAtInt[ts3_idx]) {  // ts_EM -> ts_HAD
+      for (const unsigned ts3_idx : tsNearTk[i]) {  // tk -> ts
         if (timeAndEnergyCompatible(
-                total_raw_energy, tracks[i], tracksters[ts2_idx], track_time, track_timeErr, track_timeQual)) {
-          recordTrackster(ts2_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+                total_raw_energy, tracks[i], tracksters[ts3_idx], track_time, track_timeErr, track_timeQual)) {
+          recordTrackster(ts3_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
         }
-        for (const unsigned ts1_idx : tsHadNearAtInt[ts2_idx]) {  // ts_HAD -> ts_HAD
+        for (const unsigned ts2_idx : tsNearAtInt[ts3_idx]) {  // ts_EM -> ts_HAD
+          if (timeAndEnergyCompatible(
+                  total_raw_energy, tracks[i], tracksters[ts2_idx], track_time, track_timeErr, track_timeQual)) {
+            recordTrackster(ts2_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+          }
+          for (const unsigned ts1_idx : tsHadNearAtInt[ts2_idx]) {  // ts_HAD -> ts_HAD
+            if (timeAndEnergyCompatible(
+                    total_raw_energy, tracks[i], tracksters[ts1_idx], track_time, track_timeErr, track_timeQual)) {
+              recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+            }
+          }
+        }
+        for (const unsigned ts1_idx : tsHadNearAtInt[ts3_idx]) {  // ts_HAD -> ts_HAD
           if (timeAndEnergyCompatible(
                   total_raw_energy, tracks[i], tracksters[ts1_idx], track_time, track_timeErr, track_timeQual)) {
             recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
           }
         }
       }
-      for (const unsigned ts1_idx : tsHadNearAtInt[ts3_idx]) {  // ts_HAD -> ts_HAD
+      for (const unsigned ts4_idx : tsNearTkAtInt[i]) {  // do the same for tk -> ts links at the interface
         if (timeAndEnergyCompatible(
-                total_raw_energy, tracks[i], tracksters[ts1_idx], track_time, track_timeErr, track_timeQual)) {
-          recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+                total_raw_energy, tracks[i], tracksters[ts4_idx], track_time, track_timeErr, track_timeQual)) {
+          recordTrackster(ts4_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+        }
+        for (const unsigned ts2_idx : tsNearAtInt[ts4_idx]) {
+          if (timeAndEnergyCompatible(
+                  total_raw_energy, tracks[i], tracksters[ts2_idx], track_time, track_timeErr, track_timeQual)) {
+            recordTrackster(ts2_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+          }
+          for (const unsigned ts1_idx : tsHadNearAtInt[ts2_idx]) {
+            if (timeAndEnergyCompatible(
+                    total_raw_energy, tracks[i], tracksters[ts1_idx], track_time, track_timeErr, track_timeQual)) {
+              recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+            }
+          }
+        }
+        for (const unsigned ts1_idx : tsHadNearAtInt[ts4_idx]) {
+          if (timeAndEnergyCompatible(
+                  total_raw_energy, tracks[i], tracksters[ts1_idx], track_time, track_timeErr, track_timeQual)) {
+            recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+          }
         }
       }
     }
-    for (const unsigned ts4_idx : tsNearTkAtInt[i]) {  // do the same for tk -> ts links at the interface
-      if (timeAndEnergyCompatible(
-              total_raw_energy, tracks[i], tracksters[ts4_idx], track_time, track_timeErr, track_timeQual)) {
-        recordTrackster(ts4_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
-      }
-      for (const unsigned ts2_idx : tsNearAtInt[ts4_idx]) {
-        if (timeAndEnergyCompatible(
-                total_raw_energy, tracks[i], tracksters[ts2_idx], track_time, track_timeErr, track_timeQual)) {
-          recordTrackster(ts2_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+    else{
+      for (const unsigned ts3_idx : tsNearTk[i]) {  // tk -> ts
+        if (energyCompatible(
+                total_raw_energy, tracks[i], tracksters[ts3_idx])) {
+          recordTrackster(ts3_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
         }
-        for (const unsigned ts1_idx : tsHadNearAtInt[ts2_idx]) {
-          if (timeAndEnergyCompatible(
-                  total_raw_energy, tracks[i], tracksters[ts1_idx], track_time, track_timeErr, track_timeQual)) {
+        for (const unsigned ts2_idx : tsNearAtInt[ts3_idx]) {  // ts_EM -> ts_HAD
+          if (energyCompatible(
+                  total_raw_energy, tracks[i], tracksters[ts2_idx])) {
+            recordTrackster(ts2_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+          }
+          for (const unsigned ts1_idx : tsHadNearAtInt[ts2_idx]) {  // ts_HAD -> ts_HAD
+            if (energyCompatible(
+                    total_raw_energy, tracks[i], tracksters[ts1_idx])) {
+              recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+            }
+          }
+        }
+        for (const unsigned ts1_idx : tsHadNearAtInt[ts3_idx]) {  // ts_HAD -> ts_HAD
+          if (energyCompatible(
+                  total_raw_energy, tracks[i], tracksters[ts1_idx])) {
             recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
           }
         }
       }
-      for (const unsigned ts1_idx : tsHadNearAtInt[ts4_idx]) {
-        if (timeAndEnergyCompatible(
-                total_raw_energy, tracks[i], tracksters[ts1_idx], track_time, track_timeErr, track_timeQual)) {
-          recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+      for (const unsigned ts4_idx : tsNearTkAtInt[i]) {  // do the same for tk -> ts links at the interface
+        if (energyCompatible(
+                total_raw_energy, tracks[i], tracksters[ts4_idx])) {
+          recordTrackster(ts4_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+        }
+        for (const unsigned ts2_idx : tsNearAtInt[ts4_idx]) {
+          if (energyCompatible(
+                  total_raw_energy, tracks[i], tracksters[ts2_idx])) {
+            recordTrackster(ts2_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+          }
+          for (const unsigned ts1_idx : tsHadNearAtInt[ts2_idx]) {
+            if (energyCompatible(
+                    total_raw_energy, tracks[i], tracksters[ts1_idx])) {
+              recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+            }
+          }
+        }
+        for (const unsigned ts1_idx : tsHadNearAtInt[ts4_idx]) {
+          if (energyCompatible(
+                  total_raw_energy, tracks[i], tracksters[ts1_idx])) {
+            recordTrackster(ts1_idx, tracksters, tsH, chargedMask, total_raw_energy, chargedCandidate);
+          }
         }
       }
     }

@@ -36,6 +36,7 @@ namespace ticl {
                         const edm::ValueMap<float> &,
                         const edm::ValueMap<float> &,
                         const edm::ValueMap<float> &,
+                        const bool,
                         const std::vector<reco::Muon> &,
                         const edm::Handle<std::vector<Trackster>>,
                         std::vector<TICLCandidate> &,
@@ -67,6 +68,10 @@ namespace ticl {
                                  const float &tkTime,
                                  const float &tkTimeErr,
                                  const float &tkTimeQual);
+    
+    bool energyCompatible(float &total_raw_energy,
+                                 const reco::Track &track,
+                                 const Trackster &trackster);
 
     void recordTrackster(const unsigned ts,  // trackster index
                          const std::vector<Trackster> &tracksters,

@@ -99,6 +99,7 @@ private:
 
   const edm::ESGetToken<MagneticField, IdealMagneticFieldRecord> bfield_token_;
   const edm::ESGetToken<Propagator, TrackingComponentsRecord> propagator_token_;
+  const bool useMTDTiming_;
   const bool optimiseAcrossTracksters_;
   const int eta_bin_window_;
   const int phi_bin_window_;
@@ -155,6 +156,7 @@ TrackstersMergeProducer::TrackstersMergeProducer(const edm::ParameterSet &ps)
       bfield_token_(esConsumes<MagneticField, IdealMagneticFieldRecord, edm::Transition::BeginRun>()),
       propagator_token_(
           esConsumes<Propagator, TrackingComponentsRecord, edm::Transition::BeginRun>(edm::ESInputTag("", propName_))),
+      useMTDTiming_(ps.getParameter<bool>("useMTDTiming")),
       optimiseAcrossTracksters_(ps.getParameter<bool>("optimiseAcrossTracksters")),
       eta_bin_window_(ps.getParameter<int>("eta_bin_window")),
       phi_bin_window_(ps.getParameter<int>("phi_bin_window")),
@@ -257,24 +259,23 @@ void TrackstersMergeProducer::produce(edm::Event &evt, const edm::EventSetup &es
   edm::Handle<std::vector<reco::Track>> track_h;
   evt.getByToken(tracks_token_, track_h);
   const auto &tracks = *track_h;
-
   const auto &layerClusters = evt.get(clusters_token_);
   const auto &layerClustersTimes = evt.get(clustersTime_token_);
   const auto &muons = evt.get(muons_token_);
   const auto &trackTime = evt.get(tracks_time_token_);
   const auto &trackTimeErr = evt.get(tracks_time_err_token_);
   const auto &trackTimeQual = evt.get(tracks_time_quality_token_);
-
+  
   // Linking
   linkingAlgo_->linkTracksters(
-      track_h, trackTime, trackTimeErr, trackTimeQual, muons, trackstersclue3d_h, *resultCandidates, *resultFromTracks);
+      track_h, trackTime, trackTimeErr, trackTimeQual, useMTDTiming_, muons, trackstersclue3d_h, *resultCandidates, *resultFromTracks);
 
   // Print debug info
   LogDebug("TrackstersMergeProducer") << "Results from the linking step : " << std::endl
                                       << "No. of Tracks : " << tracks.size()
                                       << "  No. of Tracksters : " << (*trackstersclue3d_h).size() << std::endl
                                       << "(neutral candidates have track id -1)" << std::endl;
-
+  
   std::vector<TICLCandidate> &candidates = *resultCandidates;
   for (const auto &cand : candidates) {
     auto track_ptr = cand.trackPtr();
@@ -341,16 +342,14 @@ void TrackstersMergeProducer::produce(edm::Event &evt, const edm::EventSetup &es
       resultTrackstersMerged->push_back(outTrackster);
     }
   }
-
   assignPCAtoTracksters(*resultTrackstersMerged,
                         layerClusters,
                         layerClustersTimes,
-                        rhtools_.getPositionLayer(rhtools_.lastLayerEE()).z());
+                        rhtools_.getPositionLayer(rhtools_.lastLayerEE()).z());          
   energyRegressionAndID(layerClusters, tfSession_, *resultTrackstersMerged);
-
+  
   //filling the TICLCandidates information
   assert(resultTrackstersMerged->size() == resultCandidates->size());
-
   auto isHad = [](const Trackster &tracksterMerge) {
     return tracksterMerge.id_probability(Trackster::ParticleType::photon) +
                tracksterMerge.id_probability(Trackster::ParticleType::electron) <
@@ -427,13 +426,13 @@ void TrackstersMergeProducer::energyRegressionAndID(const std::vector<reco::Calo
   // j -> layer
   // k -> cluster
   // l -> feature
-
+  
   // do nothing when no trackster passes the selection (3)
   int batchSize = (int)tracksters.size();
   if (batchSize == 0) {
     return;
   }
-
+  
   for (auto &t : tracksters) {
     t.setRegressedEnergy(0.f);
     t.zeroProbabilities();
@@ -453,7 +452,6 @@ void TrackstersMergeProducer::energyRegressionAndID(const std::vector<reco::Calo
   if (!eidOutputNameId_.empty()) {
     outputNames.push_back(eidOutputNameId_);
   }
-
   // fill input tensor (5)
   for (int i = 0; i < batchSize; i++) {
     const Trackster &trackster = tracksters[i];
@@ -502,7 +500,6 @@ void TrackstersMergeProducer::energyRegressionAndID(const std::vector<reco::Calo
       }
     }
   }
-
   // run the inference (7)
   tensorflow::run(eidSession, inputList, outputNames, &outputs);
 
@@ -517,7 +514,7 @@ void TrackstersMergeProducer::energyRegressionAndID(const std::vector<reco::Calo
       tracksters[i].setRegressedEnergy(regressedEnergy);
     }
   }
-
+  
   // store id probabilities per trackster (8)
   if (!eidOutputNameId_.empty()) {
     // get the pointer to the id probability tensor, dimension is batch x id_probabilities.size()
@@ -589,6 +586,7 @@ void TrackstersMergeProducer::fillDescriptions(edm::ConfigurationDescriptions &d
   desc.add<edm::InputTag>("layer_clusters", edm::InputTag("hgcalLayerClusters"));
   desc.add<edm::InputTag>("layer_clustersTime", edm::InputTag("hgcalLayerClusters", "timeLayerCluster"));
   desc.add<edm::InputTag>("tracks", edm::InputTag("generalTracks"));
+  desc.add<bool>("useMTDTiming", true);
   desc.add<edm::InputTag>("tracksTime", edm::InputTag("tofPID:t0"));
   desc.add<edm::InputTag>("tracksTimeQual", edm::InputTag("mtdTrackQualityMVA:mtdQualMVA"));
   desc.add<edm::InputTag>("tracksTimeErr", edm::InputTag("tofPID:sigmat0"));
